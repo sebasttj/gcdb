@@ -1,0 +1,177 @@
+#!/usr/bin/env python
+
+import sys
+import psycopg2
+import json
+import logging
+import argparse
+
+def db_insert(ind, table, keys, data):
+	# first check to see if the row already exists (as identified by its PK)
+	cur.execute(
+		'select 1 from {0} where {1}'.format(
+			table, ' and '.join([ '{0} = %s'.format(k) for k in keys ])
+		)
+	,	[ data[k] for k in keys ]
+	)
+	
+	if cur.rowcount == 0:
+		# if it doesn't, insert it
+		logging.debug('%sInserting into %s: %s', '  ' * ind, table, str(data))
+		cur.execute(
+			'insert into {0} ({1}) values ({2})'.format(
+				table, ','.join(data.keys()), ','.join(['%s'] * len(data))
+			)
+		,	data.values()
+		)
+
+parser = argparse.ArgumentParser(description='Ingest nfl.com GameCenter JSON into a GCDB-compatible database.')
+parser.add_argument('-v', '--verbosity', dest='loglevel', default='warn', choices='debug,info,warn,none'.split(',') , help='logging level (default: %(default)s)')
+parser.add_argument('-c', '--dbconn', default='dbname=gcdb', help='psycopg2 connection string to use to connect to the database (default: %(default)s)')
+parser.add_argument('-f', '--file', default=None, help='file from which to read the JSON string (default: standard input)')
+args = parser.parse_args()
+
+if args.loglevel == 'none': args.loglevel = 'error'
+
+log_level_numeric = getattr(logging, args.loglevel.upper(), None)
+logging.basicConfig(level=log_level_numeric, format='%(message)s')
+
+try:
+	if args.file is None:
+		args.file = sys.stdin
+	else:
+		logging.debug('Opening file "%s" to read JSON string...', args.file)
+		args.file = open(args.file, 'r')
+	
+	logging.debug('Reading JSON string...')
+	gameCenterJson = args.file.read()
+	
+	logging.debug('Parsing JSON string...')
+	gameCenter = None
+	gameCenter = json.loads(gameCenterJson)
+	
+	logging.debug('Connecting to the database...')
+	conn = None
+	conn = psycopg2.connect(args.dbconn)
+	cur = conn.cursor()
+	
+	logging.debug('Processing GameCenter data...')
+	for gameid in gameCenter:
+		if gameid == 'nextupdate': continue
+		logging.info('Processing game: %s', gameid)
+		
+		gamevals = { 'gameid': gameid }
+		gamevals.update(
+			{ k + '_team': gameCenter[gameid][k]['abbr'] for k in [ 'home', 'away' ] }
+		)
+		db_insert(1, 'game', [ 'gameid' ], gamevals)
+		
+		for team in [ gameCenter[gameid][k] for k in [ 'home', 'away' ] ]:
+			for quarter in team['score']:
+				if quarter == 'T': continue;
+				logging.info('  Processing score for team %s quarter %s', team['abbr'], quarter)
+				db_insert(2, 'quarter_score', [ 'gameid', 'team', 'quarter' ], {
+					'gameid' : gameid,
+					'team'   : team['abbr'],
+					'quarter': quarter,
+					'points' : team['score'][quarter],
+				})
+		
+		for driveid in gameCenter[gameid]['drives']:
+			if driveid == 'crntdrv': continue
+			logging.info('  Processing drive: %s', driveid)
+			
+			db_insert(2, 'drive', [ 'gameid', 'driveid' ], {
+				'gameid': gameid,
+				'driveid': driveid,
+				'pos_team': gameCenter[gameid]['drives'][driveid]['posteam'],
+			})
+			
+			plays = gameCenter[gameid]['drives'][driveid]['plays']
+			for playid in plays:
+				logging.info('    Processing play: %s', playid)
+				time, qtr, yardline, down, yards_to_go, description = [
+					plays[playid][k] for k in [ 'time', 'qtr', 'yrdln', 'down', 'ydstogo', 'desc' ]
+				]
+				
+				# End of quarter counts as a "play" for some reason; ignore it
+				if len(time) == 0: continue
+				
+				# Convert the time from a quarter + countdown
+				# into a count-up of seconds since game start
+				mins, secs = time.split(':')
+				time = qtr * 15 * 60 - int(mins) * 60 - int(secs)
+				
+				# Convert yards from 1-50 with a team indicator into [-50, 50].
+				# Yard 0 is midfield, red zone is on the positive side.
+				# E.g., if team ABC has possession, the yardline "ABC 34" becomes -16,
+				#  and the yardline "XYZ 34" becomes 16.
+				# Some plays (e.g., time out) have no yardline associated
+				if yardline == '':
+					yardline = None
+				elif yardline is not None:
+					yardline = yardline.split(' ');
+					if len(yardline) > 1:
+						side, yardline = yardline
+						yardline = 50 - int(yardline);
+						if side == plays[playid]['posteam']:
+							yardline *= -1
+						
+					else: # midfield, which is just "50" with no team indicator
+						yardline = 0
+				
+				db_insert(3, 'play', [ 'gameid', 'playid' ], {
+					'gameid'     : gameid,
+					'driveid'    : driveid,
+					'playid'     : playid,
+					'yardline'   : yardline,
+					'time'       : time,
+					'down'       : down,
+					'yards_to_go': yards_to_go,
+					'description': description,
+				})
+				
+				for playerid in plays[playid]['players']:
+					logging.info('      Processing player: %s', playerid)
+					player_inserted = False
+					for action in plays[playid]['players'][playerid]:
+						if not player_inserted:
+							db_insert(4, 'player', [ 'playerid' ], {
+								'playerid': playerid,
+								'name'    : action['playerName']
+							})
+							player_inserted = True
+						
+						logging.info('        Processing action: %s', action['sequence'])
+						db_insert(4, 'play_action', [ 'gameid', 'playid', 'sequence' ], {
+							'gameid'  : gameid,
+							'playid'  : playid,
+							'sequence': action['sequence'],
+							'playerid': playerid,
+							'actionid': action['statId'],
+							'yards'   : action['yards'],
+						})
+	
+	cur.close()
+	conn.commit()
+	conn.close()
+
+except IOError as e:
+	logging.warn('Could not read from file "%s": %s.', args.file or 'stdin', e.strerror)
+
+except ValueError as e:
+	# Fuck the JSON module and its shitty error handling. Plain "ValueError"? Booh!
+	if gameCenter is None:
+		logging.warn('Could not parse JSON: %s', str(e))
+
+	else:
+		# Some unexpected ValueError -- better just re-raise it so we get a stack trace.
+		raise
+
+except psycopg2.DatabaseError as e:
+	if conn is None:
+		logging.warn('Could not connect to the database: %s', str(e));
+	else:
+		# Unexpected db error
+		raise
+	
