@@ -13,14 +13,15 @@ About
 -----
 
    Gcdb is a database which stores play-by-play information about NFL games. It
-   records home and away team names, points scored per quarter, and play-by-play
-   data. There is also a hierarchical categorization of play types.
+   records home and away team names, points scored per quarter, and
+   play-by-play data. There is also a hierarchical categorization of play
+   types.
    
    The idea is that you can use this data to answer questions that cannot
    generally be answered by on-line tools. See the "Examples" section for some
    ideas.
    
-   Included is a script that can parse a nfl.com GameCenter JSON file, and add
+   Included is a script that can parse an nfl.com GameCenter JSON file and add
    its data to gcdb.
 
 Installation
@@ -28,12 +29,12 @@ Installation
 
    Gcdb requires a PostgreSQL database, and the ingest script requires
    Python 2 with the psycopg2, json, logging, and argparse modules. On many
-   systems, the psycoph2 module is not included simply by installing Python, it
+   systems, the psycopg2 module is not included simply by installing Python; it
    must be specifically requested as a separate package.
    
    On a Debian-based system, you can install all reqiuired components like so:
    
-    # apt-get install postgresql python-psycopg2
+    # apt-get install postgresql python python-psycopg2
    
    Once Postgres is installed, the simplest way to proceed is to set up a user
    account for yourself using auth ident, and give it with full control to a
