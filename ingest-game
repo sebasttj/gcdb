@@ -53,6 +53,15 @@ parser.add_argument(
 )
 
 parser.add_argument(
+	'-s', '--season',
+	type=int,
+	default=None,
+	help='when in update mode, download schedules starting with this year '
+	     '(default: determine latest year from games in the DB, or 2009 if none '
+	     'exist)'
+)
+
+parser.add_argument(
 	'files',
 	nargs='*',
 	default=[],
@@ -76,10 +85,10 @@ try:
 
 	if args.update:
 		start_year = 2009 # Years before this don't seem to have JSON feeds.
-		start_week = -3
+		start_week = -4
 
 		season_types = (
-			('PRE', range(1, 4 + 1)),
+			('PRE', range(0, 4 + 1)),
 			('REG', range(1, 17 + 1)),
 			('POST', [ 18, 19, 20, 22 ]),
 		)
@@ -92,20 +101,23 @@ try:
 		end_year = int(current_week_data.getAttribute('y'))
 		end_week = int(current_week_data.getAttribute('w'))
 		end_type = current_week_data.getAttribute('t') # not sure about this
+		
+		if args.season is not None:
+			start_year = args.season
+		else:
+			cur.execute("""
+				select season, max(week)
+					from game
+					where season = (select max(season) from game)
+					group by season
+			""")
 
-		cur.execute("""
-			select season, max(week)
-				from game
-				where season = (select max(season) from game)
-				group by season
-		""")
-
-		if cur.rowcount > 0:
-			start_year, start_week = cur.fetchone()
-			++start_week
-			if start_week > 22:
-				++start_year
-				start_week = 1
+			if cur.rowcount > 0:
+				start_year, start_week = cur.fetchone()
+				++start_week
+				if start_week > 22:
+					++start_year
+					start_week = 0
 
 		schedule_url = 'http://www.nfl.com/ajax/scorestrip?season=%d&seasonType=%s&week=%d'
 
@@ -146,25 +158,31 @@ try:
 		args.files.extend([ gc_url.format(g) for g, in cur.fetchall() ])
 
 	elif not args.files:
-		args.files = [ sys.stdin ]
+		args.files = [ '-' ]
 
 		
 	for file in args.files:
+		gameCenter = None
+
 		try:
-			logging.debug('Opening "%s" to read JSON string...', file)
-			jsonFile = urllib2.urlopen(file)
+			if file == '-':
+				logging.debug('Reading JSON string from stdin')
+				jsonFile = sys.stdin
+				
+			else:
+				logging.debug('Opening "%s" to read JSON string...', file)
+				jsonFile = urllib2.urlopen(file)
 		
 			logging.debug('Reading JSON string...')
 			gameCenterJson = jsonFile.read()
 	
 			logging.debug('Parsing JSON string...')
-			gameCenter = None
 			gameCenter = json.loads(gameCenterJson)
 	
 			logging.debug('Processing GameCenter data...')
 			for gameid in gameCenter:
 				if gameid == 'nextupdate': continue
-				if gameCenter[gameid]['qtr'] != 'Final':
+				if not gameCenter[gameid]['qtr'].lower().startswith('final'):
 					logging.warn('Skipping game %s because it is not complete', gameid)
 					continue
 					
