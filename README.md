@@ -45,16 +45,15 @@ Installation
     $ sudo -u postgres createdb -O $USER gcdb
    
    Now that permissions are set up and we have a blank database, we can import
-   the gcdb schema:
+   the gcdb schema, and load the statistical metadata:
    
-    $ psql -f gcdb-schema.sql gcdb
-   
-   Now, all that's left to do is import some data. Download a game from
-   nfl.com, and ingest it.
-   
-    $ wget http://www.nfl.com/liveupdate/game-center/2012020500/2012020500_gtd.json
-    $ ./gcdb-ingest-game 2012020500_gtd.json
-   
+    $ psql -f schema.sql gcdb
+    $ psql -f stat-data.sql gcdb
+  
+   Now, just tell gcdb to update itself based on the schedule info from nfl.com:
+
+    $ ./ingest-game --update
+ 
    Voila!
 
 Examples

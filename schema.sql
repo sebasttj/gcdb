@@ -4,7 +4,7 @@
 
 -- Dumped from database version 9.1.5
 -- Dumped by pg_dump version 9.1.5
--- Started on 2012-09-04 17:31:36 CDT
+-- Started on 2012-09-09 09:29:10 CDT
 
 SET statement_timeout = 0;
 SET client_encoding = 'UTF8';
@@ -31,14 +31,24 @@ COMMENT ON EXTENSION plpgsql IS 'PL/pgSQL procedural language';
 
 SET search_path = public, pg_catalog;
 
-SET default_tablespace = '';
-
 SET default_with_oids = false;
+
+--
+-- TOC entry 166 (class 1259 OID 16520)
+-- Dependencies: 5
+-- Name: action; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE action (
+    statid character(100) NOT NULL,
+    actionid integer NOT NULL
+);
+
 
 --
 -- TOC entry 161 (class 1259 OID 16499)
 -- Dependencies: 5
--- Name: drive; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: drive; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE drive (
@@ -51,7 +61,7 @@ CREATE TABLE drive (
 --
 -- TOC entry 167 (class 1259 OID 16528)
 -- Dependencies: 5
--- Name: game; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: game; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE game (
@@ -67,7 +77,7 @@ CREATE TABLE game (
 --
 -- TOC entry 162 (class 1259 OID 16502)
 -- Dependencies: 5
--- Name: play; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: play; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE play (
@@ -85,7 +95,7 @@ CREATE TABLE play (
 --
 -- TOC entry 163 (class 1259 OID 16508)
 -- Dependencies: 5
--- Name: play_action; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: play_action; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE play_action (
@@ -101,7 +111,7 @@ CREATE TABLE play_action (
 --
 -- TOC entry 164 (class 1259 OID 16511)
 -- Dependencies: 5
--- Name: player; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: player; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE player (
@@ -123,7 +133,7 @@ CREATE VIEW drive_action AS
 --
 -- TOC entry 169 (class 1259 OID 16685)
 -- Dependencies: 5
--- Name: quarter_score; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: quarter_score; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE quarter_score (
@@ -147,32 +157,20 @@ CREATE VIEW game_score AS
 --
 -- TOC entry 165 (class 1259 OID 16514)
 -- Dependencies: 5
--- Name: stat; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: stat; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE stat (
     statid character varying(200) NOT NULL,
     description character varying(1000),
-    has_yards boolean NOT NULL
-);
-
-
---
--- TOC entry 166 (class 1259 OID 16520)
--- Dependencies: 5
--- Name: stat_action_leaf; Type: TABLE; Schema: public; Owner: -; Tablespace: 
---
-
-CREATE TABLE stat_action_leaf (
-    statid character(100) NOT NULL,
-    actionid integer NOT NULL
+    long_description character(2000)
 );
 
 
 --
 -- TOC entry 168 (class 1259 OID 16531)
 -- Dependencies: 5
--- Name: stat_hierarchy; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+-- Name: stat_hierarchy; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE stat_hierarchy (
@@ -188,13 +186,13 @@ CREATE TABLE stat_hierarchy (
 --
 
 CREATE VIEW stat_action AS
-    WITH RECURSIVE hier AS (SELECT stat_action_leaf.statid, stat_action_leaf.actionid FROM stat_action_leaf UNION ALL SELECT n.parent, p.actionid FROM (stat_hierarchy n JOIN hier p ON ((n.child = p.statid)))) SELECT hier.statid, hier.actionid FROM hier;
+    WITH RECURSIVE hier AS (SELECT action.statid, action.actionid FROM action UNION ALL SELECT n.parent, p.actionid FROM (stat_hierarchy n JOIN hier p ON ((n.child = p.statid)))) SELECT hier.statid, hier.actionid FROM hier;
 
 
 --
 -- TOC entry 1932 (class 2606 OID 16535)
 -- Dependencies: 161 161 161 1960
--- Name: PK_DRIVE; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_DRIVE; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY drive
@@ -204,7 +202,7 @@ ALTER TABLE ONLY drive
 --
 -- TOC entry 1946 (class 2606 OID 16537)
 -- Dependencies: 167 167 1960
--- Name: PK_GAME; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_GAME; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY game
@@ -214,7 +212,7 @@ ALTER TABLE ONLY game
 --
 -- TOC entry 1935 (class 2606 OID 16539)
 -- Dependencies: 162 162 162 1960
--- Name: PK_PLAY; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_PLAY; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY play
@@ -224,7 +222,7 @@ ALTER TABLE ONLY play
 --
 -- TOC entry 1940 (class 2606 OID 16541)
 -- Dependencies: 164 164 1960
--- Name: PK_PLAYER; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_PLAYER; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY player
@@ -234,7 +232,7 @@ ALTER TABLE ONLY player
 --
 -- TOC entry 1938 (class 2606 OID 16543)
 -- Dependencies: 163 163 163 163 1960
--- Name: PK_PLAY_ACTION; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_PLAY_ACTION; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY play_action
@@ -244,7 +242,7 @@ ALTER TABLE ONLY play_action
 --
 -- TOC entry 1950 (class 2606 OID 16689)
 -- Dependencies: 169 169 169 169 1960
--- Name: PK_QUARTER_SCORE; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_QUARTER_SCORE; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY quarter_score
@@ -254,7 +252,7 @@ ALTER TABLE ONLY quarter_score
 --
 -- TOC entry 1942 (class 2606 OID 16545)
 -- Dependencies: 165 165 1960
--- Name: PK_STAT; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_STAT; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY stat
@@ -264,17 +262,17 @@ ALTER TABLE ONLY stat
 --
 -- TOC entry 1944 (class 2606 OID 16547)
 -- Dependencies: 166 166 166 1960
--- Name: PK_STAT_ACTION; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_STAT_ACTION; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY stat_action_leaf
+ALTER TABLE ONLY action
     ADD CONSTRAINT "PK_STAT_ACTION" PRIMARY KEY (statid, actionid);
 
 
 --
 -- TOC entry 1948 (class 2606 OID 16549)
 -- Dependencies: 168 168 168 1960
--- Name: PK_STAT_HIER; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+-- Name: PK_STAT_HIER; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY stat_hierarchy
@@ -284,7 +282,7 @@ ALTER TABLE ONLY stat_hierarchy
 --
 -- TOC entry 1936 (class 1259 OID 16550)
 -- Dependencies: 163 1960
--- Name: IDX_PLAY_ACTION_ACTIONID; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+-- Name: IDX_PLAY_ACTION_ACTIONID; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_PLAY_ACTION_ACTIONID" ON play_action USING btree (actionid);
@@ -293,7 +291,7 @@ CREATE INDEX "IDX_PLAY_ACTION_ACTIONID" ON play_action USING btree (actionid);
 --
 -- TOC entry 1933 (class 1259 OID 16551)
 -- Dependencies: 162 1960
--- Name: IDX_PLAY_DOWN; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+-- Name: IDX_PLAY_DOWN; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_PLAY_DOWN" ON play USING btree (down);
@@ -301,7 +299,7 @@ CREATE INDEX "IDX_PLAY_DOWN" ON play USING btree (down);
 
 --
 -- TOC entry 1951 (class 2606 OID 16552)
--- Dependencies: 167 1945 161 1960
+-- Dependencies: 161 167 1945 1960
 -- Name: FK_DRIVE_GAME; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -311,7 +309,7 @@ ALTER TABLE ONLY drive
 
 --
 -- TOC entry 1953 (class 2606 OID 16557)
--- Dependencies: 162 163 163 1934 162 1960
+-- Dependencies: 1934 162 162 163 163 1960
 -- Name: FK_PLAY_ACTION_GAMEID_PLAYID; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -321,7 +319,7 @@ ALTER TABLE ONLY play_action
 
 --
 -- TOC entry 1954 (class 2606 OID 16562)
--- Dependencies: 163 1939 164 1960
+-- Dependencies: 164 163 1939 1960
 -- Name: FK_PLAY_ACTION_PLAYERID; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -331,7 +329,7 @@ ALTER TABLE ONLY play_action
 
 --
 -- TOC entry 1952 (class 2606 OID 16567)
--- Dependencies: 162 162 161 161 1931 1960
+-- Dependencies: 1931 162 162 161 161 1960
 -- Name: FK_PLAY_GAME; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -341,7 +339,7 @@ ALTER TABLE ONLY play
 
 --
 -- TOC entry 1958 (class 2606 OID 16690)
--- Dependencies: 169 1945 167 1960
+-- Dependencies: 1945 169 167 1960
 -- Name: FK_QUARTER_SCORE_GAMEID; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -351,35 +349,35 @@ ALTER TABLE ONLY quarter_score
 
 --
 -- TOC entry 1955 (class 2606 OID 16572)
--- Dependencies: 166 165 1941 1960
+-- Dependencies: 1941 166 165 1960
 -- Name: FK_STAT_ACTION_STATID; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY stat_action_leaf
+ALTER TABLE ONLY action
     ADD CONSTRAINT "FK_STAT_ACTION_STATID" FOREIGN KEY (statid) REFERENCES stat(statid);
 
 
 --
--- TOC entry 1956 (class 2606 OID 16577)
--- Dependencies: 1941 168 165 1960
--- Name: FK_STAT_HIER_CHILD; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- TOC entry 1957 (class 2606 OID 24648)
+-- Dependencies: 168 1941 165 1960
+-- Name: FK_STAT_HIER_CHILD_STAT; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY stat_hierarchy
-    ADD CONSTRAINT "FK_STAT_HIER_CHILD" FOREIGN KEY (child) REFERENCES stat(statid);
+    ADD CONSTRAINT "FK_STAT_HIER_CHILD_STAT" FOREIGN KEY (child) REFERENCES stat(statid);
 
 
 --
--- TOC entry 1957 (class 2606 OID 16582)
--- Dependencies: 1941 168 165 1960
--- Name: FK_STAT_HIER_PARENT; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- TOC entry 1956 (class 2606 OID 24643)
+-- Dependencies: 168 1941 165 1960
+-- Name: FK_STAT_HIER_PARENT_STAT; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY stat_hierarchy
-    ADD CONSTRAINT "FK_STAT_HIER_PARENT" FOREIGN KEY (parent) REFERENCES stat(statid);
+    ADD CONSTRAINT "FK_STAT_HIER_PARENT_STAT" FOREIGN KEY (parent) REFERENCES stat(statid);
 
 
--- Completed on 2012-09-04 17:31:37 CDT
+-- Completed on 2012-09-09 09:29:10 CDT
 
 --
 -- PostgreSQL database dump complete
