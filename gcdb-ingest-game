@@ -35,7 +35,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
 	'-v', '--verbosity',
 	dest='loglevel', default='warn',
-	choices='debug,info,warn,none'.split(',') ,
+	choices='debug,info,warn,error'.split(',') ,
 	help='logging level (default: %(default)s)'
 )
 
@@ -63,8 +63,6 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-
-if args.loglevel == 'none': args.loglevel = 'error'
 
 log_level_numeric = getattr(logging, args.loglevel.upper(), None)
 logging.basicConfig(level=log_level_numeric, format='%(message)s')
@@ -114,6 +112,8 @@ try:
 		td_pm = datetime.timedelta(0, 0, 0, 0, 0, 12)
 
 		for year in range(start_year, end_year + 1):
+			logging.warn('Downloading schedule for season %s...', year)
+			
 			for season_type, weeks in season_types:
 				for week in weeks:
 					if year == start_year and week < start_week: continue
@@ -266,12 +266,12 @@ try:
 		# try
 	
 		except IOError as e:
-			logging.warn('Could not read from file "%s": %s.', file, str(e))
+			logging.error('Could not read from file "%s": %s.', file, str(e))
 
 		except ValueError as e:
 			# Fuck the JSON module and its shitty error handling. Plain "ValueError"? Booh!
 			if gameCenter is None:
-				logging.warn('Could not parse JSON: %s', str(e))
+				logging.error('Could not parse JSON: %s', str(e))
 
 			else:
 				# Some unexpected ValueError -- better just re-raise it so we get a stack trace.
@@ -279,7 +279,7 @@ try:
 
 		except psycopg2.DatabaseError as e:
 			if conn is None:
-				logging.warn('Could not connect to the database: %s', str(e));
+				logging.error('Could not connect to the database: %s', str(e));
 			else:
 				# Unexpected db error
 				raise
@@ -290,7 +290,7 @@ try:
 
 except psycopg2.DatabaseError as e:
 	if conn is None:
-		logging.warn('Could not connect to the database: %s', str(e));
+		logging.error('Could not connect to the database: %s', str(e));
 	else:
 		# Unexpected db error
 		raise
