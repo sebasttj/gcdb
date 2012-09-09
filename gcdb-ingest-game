@@ -1,10 +1,13 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python2.7
 
 import sys
 import psycopg2
 import json
 import logging
 import argparse
+import urllib2
+import datetime
+import xml.dom.minidom as xml
 
 def db_insert(ind, table, keys, data):
 	# first check to see if the row already exists (as identified by its PK)
@@ -25,10 +28,40 @@ def db_insert(ind, table, keys, data):
 		,	data.values()
 		)
 
-parser = argparse.ArgumentParser(description='Ingest nfl.com GameCenter JSON into a GCDB-compatible database.')
-parser.add_argument('-v', '--verbosity', dest='loglevel', default='warn', choices='debug,info,warn,none'.split(',') , help='logging level (default: %(default)s)')
-parser.add_argument('-c', '--dbconn', default='dbname=gcdb', help='psycopg2 connection string to use to connect to the database (default: %(default)s)')
-parser.add_argument('-f', '--file', default=None, help='file from which to read the JSON string (default: standard input)')
+parser = argparse.ArgumentParser(
+	description='Ingest nfl.com GameCenter JSON into a GCDB-compatible database.'
+)
+
+parser.add_argument(
+	'-v', '--verbosity',
+	dest='loglevel', default='warn',
+	choices='debug,info,warn,none'.split(',') ,
+	help='logging level (default: %(default)s)'
+)
+
+parser.add_argument(
+	'-c', '--dbconn',
+	default='dbname=gcdb',
+	help='psycopg2 connection string to use to connect to the database '
+	     '(default: %(default)s)'
+)
+
+parser.add_argument(
+	'-u', '--update',
+	action='store_true',
+	help='determine which games already in the DB have no associated data, '
+	     'download the JSON from nfl.com, and ingest it'
+)
+
+parser.add_argument(
+	'files',
+	nargs='*',
+	default=[],
+	metavar='file',
+	help='file(s) from which to read the JSON string (if no files are given and'
+	     ' the -u flag is not given, read from standard input)'
+)
+
 args = parser.parse_args()
 
 if args.loglevel == 'none': args.loglevel = 'error'
@@ -37,136 +70,223 @@ log_level_numeric = getattr(logging, args.loglevel.upper(), None)
 logging.basicConfig(level=log_level_numeric, format='%(message)s')
 
 try:
-	if args.file is None:
-		args.file = sys.stdin
-	else:
-		logging.debug('Opening file "%s" to read JSON string...', args.file)
-		args.file = open(args.file, 'r')
-	
-	logging.debug('Reading JSON string...')
-	gameCenterJson = args.file.read()
-	
-	logging.debug('Parsing JSON string...')
-	gameCenter = None
-	gameCenter = json.loads(gameCenterJson)
-	
 	logging.debug('Connecting to the database...')
 	conn = None
 	conn = psycopg2.connect(args.dbconn)
 	cur = conn.cursor()
 	
-	logging.debug('Processing GameCenter data...')
-	for gameid in gameCenter:
-		if gameid == 'nextupdate': continue
-		logging.info('Processing game: %s', gameid)
-		
-		gamevals = { 'gameid': gameid }
-		gamevals.update(
-			{ k + '_team': gameCenter[gameid][k]['abbr'] for k in [ 'home', 'away' ] }
+	args.files = [ f if f != '-' else sys.stdin for f in args.files ]
+
+	if args.update:
+		start_year = 2009 # Years before this don't seem to have JSON feeds.
+		start_week = -3
+
+		season_types = (
+			('PRE', range(1, 4 + 1)),
+			('REG', range(1, 17 + 1)),
+			('POST', [ 18, 19, 20, 22 ]),
 		)
-		db_insert(1, 'game', [ 'gameid' ], gamevals)
-		
-		for team in [ gameCenter[gameid][k] for k in [ 'home', 'away' ] ]:
-			for quarter in team['score']:
-				if quarter == 'T': continue;
-				logging.info('  Processing score for team %s quarter %s', team['abbr'], quarter)
-				db_insert(2, 'quarter_score', [ 'gameid', 'team', 'quarter' ], {
-					'gameid' : gameid,
-					'team'   : team['abbr'],
-					'quarter': quarter,
-					'points' : team['score'][quarter],
-				})
-		
-		for driveid in gameCenter[gameid]['drives']:
-			if driveid == 'crntdrv': continue
-			logging.info('  Processing drive: %s', driveid)
+
+		# First, figure out the most recent week
+		current_week_url = 'http://www.nfl.com/liveupdate/scorestrip/ss.xml'
+		current_week_dom = xml.parse(urllib2.urlopen(current_week_url))
+		current_week_data = current_week_dom.getElementsByTagName('gms')[0]
+
+		end_year = int(current_week_data.getAttribute('y'))
+		end_week = int(current_week_data.getAttribute('w'))
+		end_type = current_week_data.getAttribute('t') # not sure about this
+
+		cur.execute("""
+			select season, max(week)
+				from game
+				group by season
+				having season = max(season)
+		""")
+
+		if cur.rowcount > 0:
+			start_season, start_week = cur.fetchone()
+			++start_week
+			if start_week > 22:
+				++start_season
+				start_week = 1
+
+		schedule_url = 'http://www.nfl.com/ajax/scorestrip?season=%d&seasonType=%s&week=%d'
+		td_pm = datetime.timedelta(0, 0, 0, 0, 0, 12)
+
+		for year in range(start_year, end_year + 1):
+			for season_type, weeks in season_types:
+				for week in weeks:
+					if year == start_year and week < start_week: continue
+					if year == end_year and week > end_week: break
 			
-			db_insert(2, 'drive', [ 'gameid', 'driveid' ], {
-				'gameid': gameid,
-				'driveid': driveid,
-				'pos_team': gameCenter[gameid]['drives'][driveid]['posteam'],
-			})
+					url = schedule_url % (year, season_type, week)
+					dom = xml.parse(urllib2.urlopen(url))
 			
-			plays = gameCenter[gameid]['drives'][driveid]['plays']
-			for playid in plays:
-				logging.info('    Processing play: %s', playid)
-				time, qtr, yardline, down, yards_to_go, description = [
-					plays[playid][k] for k in [ 'time', 'qtr', 'yrdln', 'down', 'ydstogo', 'desc' ]
-				]
+					for g in dom.getElementsByTagName("g"):
+						eid = g.getAttribute('eid')
+						datestr = eid[:8] + ' ' + g.getAttribute('t')
+						info = {
+							'gameid': eid,
+							'home_team': g.getAttribute('h'),
+							'away_team': g.getAttribute('v'),
+							'season': year,
+							'week': week - (4 if season_type == 'PRE' else 0),
+							'when_played': datetime.datetime.strptime(datestr, '%Y%m%d %I:%M') + td_pm
+						}
 				
-				# End of quarter counts as a "play" for some reason; ignore it
-				if len(time) == 0: continue
-				
-				# Convert the time from a quarter + countdown
-				# into a count-up of seconds since game start
-				mins, secs = time.split(':')
-				time = qtr * 15 * 60 - int(mins) * 60 - int(secs)
-				
-				# Convert yards from 1-50 with a team indicator into [-50, 50].
-				# Yard 0 is midfield, red zone is on the positive side.
-				# E.g., if team ABC has possession, the yardline "ABC 34" becomes -16,
-				#  and the yardline "XYZ 34" becomes 16.
-				# Some plays (e.g., time out) have no yardline associated
-				if yardline == '':
-					yardline = None
-				elif yardline is not None:
-					yardline = yardline.split(' ');
-					if len(yardline) > 1:
-						side, yardline = yardline
-						yardline = 50 - int(yardline);
-						if side == plays[playid]['posteam']:
-							yardline *= -1
-						
-					else: # midfield, which is just "50" with no team indicator
-						yardline = 0
-				
-				db_insert(3, 'play', [ 'gameid', 'playid' ], {
-					'gameid'     : gameid,
-					'driveid'    : driveid,
-					'playid'     : playid,
-					'yardline'   : yardline,
-					'time'       : time,
-					'down'       : down,
-					'yards_to_go': yards_to_go,
-					'description': description,
-				})
-				
-				for playerid in plays[playid]['players']:
-					logging.info('      Processing player: %s', playerid)
-					player_inserted = False
-					for action in plays[playid]['players'][playerid]:
-						if not player_inserted:
-							db_insert(4, 'player', [ 'playerid' ], {
-								'playerid': playerid,
-								'name'    : action['playerName']
-							})
-							player_inserted = True
-						
-						logging.info('        Processing action: %s', action['sequence'])
-						db_insert(4, 'play_action', [ 'gameid', 'playid', 'sequence' ], {
-							'gameid'  : gameid,
-							'playid'  : playid,
-							'sequence': action['sequence'],
-							'playerid': playerid,
-							'actionid': action['statId'],
-							'yards'   : action['yards'],
+						db_insert(0, 'game', [ 'gameid' ], info)
+
+		cur.execute("""
+			select gameid
+				from game left join drive using (gameid)
+				where drive.gameid is null
+		""")
+		gc_url = 'http://www.nfl.com/liveupdate/game-center/{0}/{0}_gtd.json'
+		args.files.extend([ gc_url.format(g) for g, in cur.fetchall() ])
+
+	elif not args.files:
+		args.files = [ sys.stdin ]
+
+		
+	for file in args.files:
+		try:
+			logging.debug('Opening "%s" to read JSON string...', file)
+			jsonFile = urllib2.urlopen(file)
+		
+			logging.debug('Reading JSON string...')
+			gameCenterJson = jsonFile.read()
+	
+			logging.debug('Parsing JSON string...')
+			gameCenter = None
+			gameCenter = json.loads(gameCenterJson)
+	
+			logging.debug('Processing GameCenter data...')
+			for gameid in gameCenter:
+				if gameid == 'nextupdate': continue
+				logging.warn('Processing game: %s', gameid)
+		
+				gamevals = { 'gameid': gameid }
+				gamevals.update(
+					{ k + '_team': gameCenter[gameid][k]['abbr'] for k in [ 'home', 'away' ] }
+				)
+				db_insert(1, 'game', [ 'gameid' ], gamevals)
+		
+				for team in [ gameCenter[gameid][k] for k in [ 'home', 'away' ] ]:
+					for quarter in team['score']:
+						if quarter == 'T': continue;
+						logging.info('  Processing score for team %s quarter %s', team['abbr'], quarter)
+						db_insert(2, 'quarter_score', [ 'gameid', 'team', 'quarter' ], {
+							'gameid' : gameid,
+							'team'   : team['abbr'],
+							'quarter': quarter,
+							'points' : team['score'][quarter],
 						})
+		
+				for driveid in gameCenter[gameid]['drives']:
+					if driveid == 'crntdrv': continue
+					logging.info('  Processing drive: %s', driveid)
+			
+					db_insert(2, 'drive', [ 'gameid', 'driveid' ], {
+						'gameid': gameid,
+						'driveid': driveid,
+						'pos_team': gameCenter[gameid]['drives'][driveid]['posteam'],
+					})
+			
+					plays = gameCenter[gameid]['drives'][driveid]['plays']
+					for playid in plays:
+						logging.info('    Processing play: %s', playid)
+						time, qtr, yardline, down, yards_to_go, description = [
+							plays[playid][k] for k in [ 'time', 'qtr', 'yrdln', 'down', 'ydstogo', 'desc' ]
+						]
+				
+						# End of quarter counts as a "play" for some reason; ignore it
+						if len(time) == 0: continue
+				
+						# Convert the time from a quarter + countdown
+						# into a count-up of seconds since game start
+						mins, secs = time.split(':')
+						time = qtr * 15 * 60 - int(mins) * 60 - int(secs)
+				
+						# Convert yards from 1-50 with a team indicator into [-50, 50].
+						# Yard 0 is midfield, red zone is on the positive side.
+						# E.g., if team ABC has possession, the yardline "ABC 34" becomes -16,
+						#  and the yardline "XYZ 34" becomes 16.
+						# Some plays (e.g., time out) have no yardline associated
+						if yardline == '':
+							yardline = None
+						elif yardline is not None:
+							yardline = yardline.split(' ');
+							if len(yardline) > 1:
+								side, yardline = yardline
+								yardline = 50 - int(yardline);
+								if side == plays[playid]['posteam']:
+									yardline *= -1
+						
+							else: # midfield, which is just "50" with no team indicator
+								yardline = 0
+				
+						db_insert(3, 'play', [ 'gameid', 'playid' ], {
+							'gameid'     : gameid,
+							'driveid'    : driveid,
+							'playid'     : playid,
+							'yardline'   : yardline,
+							'time'       : time,
+							'down'       : down,
+							'yards_to_go': yards_to_go,
+							'description': description,
+						})
+				
+						for playerid in plays[playid]['players']:
+							logging.info('      Processing player: %s', playerid)
+							player_inserted = False
+							for action in plays[playid]['players'][playerid]:
+								if not player_inserted:
+									db_insert(4, 'player', [ 'playerid' ], {
+										'playerid': playerid,
+										'name'    : action['playerName']
+									})
+									player_inserted = True
+						
+								logging.info('        Processing action: %s', action['sequence'])
+								db_insert(4, 'play_action', [ 'gameid', 'playid', 'sequence' ], {
+									'gameid'  : gameid,
+									'playid'  : playid,
+									'sequence': action['sequence'],
+									'playerid': playerid,
+									'actionid': action['statId'],
+									'yards'   : action['yards'],
+								})
+							# for action
+						# for player
+					# for player
+				# for drive
+				
+				conn.commit()
+			# for game
+		# try
+	
+		except IOError as e:
+			logging.warn('Could not read from file "%s": %s.', file, str(e))
+
+		except ValueError as e:
+			# Fuck the JSON module and its shitty error handling. Plain "ValueError"? Booh!
+			if gameCenter is None:
+				logging.warn('Could not parse JSON: %s', str(e))
+
+			else:
+				# Some unexpected ValueError -- better just re-raise it so we get a stack trace.
+				raise
+
+		except psycopg2.DatabaseError as e:
+			if conn is None:
+				logging.warn('Could not connect to the database: %s', str(e));
+			else:
+				# Unexpected db error
+				raise
 	
 	cur.close()
-	conn.commit()
 	conn.close()
-
-except IOError as e:
-	logging.warn('Could not read from file "%s": %s.', args.file or 'stdin', e.strerror)
-
-except ValueError as e:
-	# Fuck the JSON module and its shitty error handling. Plain "ValueError"? Booh!
-	if gameCenter is None:
-		logging.warn('Could not parse JSON: %s', str(e))
-
-	else:
-		# Some unexpected ValueError -- better just re-raise it so we get a stack trace.
-		raise
+	# for file
 
 except psycopg2.DatabaseError as e:
 	if conn is None:
@@ -174,4 +294,4 @@ except psycopg2.DatabaseError as e:
 	else:
 		# Unexpected db error
 		raise
-	
+

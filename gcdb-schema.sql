@@ -59,7 +59,8 @@ CREATE TABLE game (
     home_team character(3) NOT NULL,
     away_team character(3) NOT NULL,
     season integer,
-    week integer
+    week integer,
+    when_played timestamp
 );
 
 
