@@ -75,7 +75,7 @@ try:
 	args.files = [ f if f != '-' else sys.stdin for f in args.files ]
 
 	if args.update:
-		start_year = 2012 # Years before this don't seem to have JSON feeds.
+		start_year = 2009 # Years before this don't seem to have JSON feeds.
 		start_week = -3
 
 		season_types = (
