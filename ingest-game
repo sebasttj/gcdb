@@ -97,15 +97,15 @@ try:
 		cur.execute("""
 			select season, max(week)
 				from game
+				where season = (select max(season) from game)
 				group by season
-				having season = max(season)
 		""")
 
 		if cur.rowcount > 0:
-			start_season, start_week = cur.fetchone()
+			start_year, start_week = cur.fetchone()
 			++start_week
 			if start_week > 22:
-				++start_season
+				++start_year
 				start_week = 1
 
 		schedule_url = 'http://www.nfl.com/ajax/scorestrip?season=%d&seasonType=%s&week=%d'
