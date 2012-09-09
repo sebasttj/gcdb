@@ -70,7 +70,7 @@ CREATE TABLE game (
     away_team character(3) NOT NULL,
     season integer,
     week integer,
-    when_played timestamp
+    when_played timestamp with time zone
 );
 
 
@@ -304,7 +304,7 @@ CREATE INDEX "IDX_PLAY_DOWN" ON play USING btree (down);
 --
 
 ALTER TABLE ONLY drive
-    ADD CONSTRAINT "FK_DRIVE_GAME" FOREIGN KEY (gameid) REFERENCES game(gameid);
+    ADD CONSTRAINT "FK_DRIVE_GAME" FOREIGN KEY (gameid) REFERENCES game(gameid) ON DELETE CASCADE;
 
 
 --
@@ -314,7 +314,7 @@ ALTER TABLE ONLY drive
 --
 
 ALTER TABLE ONLY play_action
-    ADD CONSTRAINT "FK_PLAY_ACTION_GAMEID_PLAYID" FOREIGN KEY (gameid, playid) REFERENCES play(gameid, playid);
+    ADD CONSTRAINT "FK_PLAY_ACTION_PLAY" FOREIGN KEY (gameid, playid) REFERENCES play(gameid, playid) ON DELETE CASCADE;
 
 
 --
@@ -324,7 +324,7 @@ ALTER TABLE ONLY play_action
 --
 
 ALTER TABLE ONLY play_action
-    ADD CONSTRAINT "FK_PLAY_ACTION_PLAYERID" FOREIGN KEY (playerid) REFERENCES player(playerid);
+    ADD CONSTRAINT "FK_PLAY_ACTION_PLAYER" FOREIGN KEY (playerid) REFERENCES player(playerid);
 
 
 --
@@ -334,7 +334,7 @@ ALTER TABLE ONLY play_action
 --
 
 ALTER TABLE ONLY play
-    ADD CONSTRAINT "FK_PLAY_GAME" FOREIGN KEY (gameid, driveid) REFERENCES drive(gameid, driveid);
+    ADD CONSTRAINT "FK_PLAY_GAME" FOREIGN KEY (gameid, driveid) REFERENCES drive(gameid, driveid) ON DELETE CASCADE;
 
 
 --
@@ -344,7 +344,7 @@ ALTER TABLE ONLY play
 --
 
 ALTER TABLE ONLY quarter_score
-    ADD CONSTRAINT "FK_QUARTER_SCORE_GAMEID" FOREIGN KEY (gameid) REFERENCES game(gameid);
+    ADD CONSTRAINT "FK_QUARTER_SCORE_GAME" FOREIGN KEY (gameid) REFERENCES game(gameid) ON DELETE CASCADE;
 
 
 --
@@ -354,7 +354,7 @@ ALTER TABLE ONLY quarter_score
 --
 
 ALTER TABLE ONLY action
-    ADD CONSTRAINT "FK_STAT_ACTION_STATID" FOREIGN KEY (statid) REFERENCES stat(statid);
+    ADD CONSTRAINT "FK_ACTION_STAT" FOREIGN KEY (statid) REFERENCES stat(statid);
 
 
 --
@@ -364,7 +364,7 @@ ALTER TABLE ONLY action
 --
 
 ALTER TABLE ONLY stat_hierarchy
-    ADD CONSTRAINT "FK_STAT_HIER_CHILD_STAT" FOREIGN KEY (child) REFERENCES stat(statid);
+    ADD CONSTRAINT "FK_STAT_HIER_CHILD_STAT" FOREIGN KEY (child) REFERENCES stat(statid) ON DELETE CASCADE;
 
 
 --
@@ -374,7 +374,7 @@ ALTER TABLE ONLY stat_hierarchy
 --
 
 ALTER TABLE ONLY stat_hierarchy
-    ADD CONSTRAINT "FK_STAT_HIER_PARENT_STAT" FOREIGN KEY (parent) REFERENCES stat(statid);
+    ADD CONSTRAINT "FK_STAT_HIER_PARENT_STAT" FOREIGN KEY (parent) REFERENCES stat(statid) ON DELETE CASCADE;
 
 
 -- Completed on 2012-09-09 09:29:10 CDT

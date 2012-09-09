@@ -6,7 +6,6 @@ import json
 import logging
 import argparse
 import urllib2
-import datetime
 import xml.dom.minidom as xml
 
 def db_insert(ind, table, keys, data):
@@ -76,7 +75,7 @@ try:
 	args.files = [ f if f != '-' else sys.stdin for f in args.files ]
 
 	if args.update:
-		start_year = 2009 # Years before this don't seem to have JSON feeds.
+		start_year = 2012 # Years before this don't seem to have JSON feeds.
 		start_week = -3
 
 		season_types = (
@@ -109,7 +108,6 @@ try:
 				start_week = 1
 
 		schedule_url = 'http://www.nfl.com/ajax/scorestrip?season=%d&seasonType=%s&week=%d'
-		td_pm = datetime.timedelta(0, 0, 0, 0, 0, 12)
 
 		for year in range(start_year, end_year + 1):
 			logging.warn('Downloading schedule for season %s...', year)
@@ -124,14 +122,16 @@ try:
 			
 					for g in dom.getElementsByTagName("g"):
 						eid = g.getAttribute('eid')
-						datestr = eid[:8] + ' ' + g.getAttribute('t')
+						datestr = '%s-%s-%s %sPM US/Eastern' % \
+							(eid[:4], eid[4:6], eid[6:8], g.getAttribute('t'))
+
 						info = {
 							'gameid': eid,
 							'home_team': g.getAttribute('h'),
 							'away_team': g.getAttribute('v'),
 							'season': year,
 							'week': week - (4 if season_type == 'PRE' else 0),
-							'when_played': datetime.datetime.strptime(datestr, '%Y%m%d %I:%M') + td_pm
+							'when_played': datestr
 						}
 				
 						db_insert(0, 'game', [ 'gameid' ], info)
@@ -140,6 +140,7 @@ try:
 			select gameid
 				from game left join drive using (gameid)
 				where drive.gameid is null
+				  and when_played < CURRENT_TIMESTAMP
 		""")
 		gc_url = 'http://www.nfl.com/liveupdate/game-center/{0}/{0}_gtd.json'
 		args.files.extend([ gc_url.format(g) for g, in cur.fetchall() ])
@@ -163,6 +164,10 @@ try:
 			logging.debug('Processing GameCenter data...')
 			for gameid in gameCenter:
 				if gameid == 'nextupdate': continue
+				if gameCenter[gameid]['qtr'] != 'Final':
+					logging.warn('Skipping game %s because it is not complete', gameid)
+					continue
+					
 				logging.warn('Processing game: %s', gameid)
 		
 				gamevals = { 'gameid': gameid }
