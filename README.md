@@ -81,6 +81,17 @@ Examples
       and statid in ('rushing_att', 'passing_dropback')
     group by statid, action_yards - yards_to_go > 0
     order by 1, 2
+    
+   Maybe you want to know which weeks had the most interceptions per game.
+   
+    select season, week, games, ints, ints::float / games ipg
+    from (
+      select season, week, count(distinct gameid) games, count(s.actionid) ints
+      from drive_action d
+      left join stat_action s on d.actionid = s.actionid and s.statid = 'passing_int'
+      group by season, week
+    ) x
+    order by ipg desc
 
    Or suppose you want to know what affect a week 1 win has on your overall
    record and chances of making the playoffs:
