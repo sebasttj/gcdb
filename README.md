@@ -55,6 +55,17 @@ Installation
     $ ./ingest-game --update
  
    Voila!
+   
+   Note: Sometimes, nfl.com will give a "404: Not Found" error when requesting a
+   JSON file, even though it exists. You'll see output like this:
+   
+    Processing game: 2011120412
+    Processing game: 2011120406
+    Could not read from file "http://www.nfl.com/liveupdate/game-center/2011120500/2011120500_gtd.json": HTTP Error 404: Not Found.
+    Processing game: 2011120800
+   
+   If you see this, don't panic! After the program is done running, simply
+   re-run `ingest-game --update`, and it will download the missing games' data.
 
 Examples
 --------
@@ -63,12 +74,43 @@ Examples
    how about we want to know whether run or pass was more successful on
    4th-and-3. Issue the following query:
    
-    select actionid, action_yards - yards_to_go > 0, count(*)
+    select statid, action_yards - yards_to_go > 0 madeit, count(*)
     from drive_action
+    join stat_action using (actionid)
     where down = 4 and yards_to_go = 3
-      and actionid in (10, 11, 14, 15, 16, 19, 20)
-    group by actionid, action_yards - yards_to_go > 0
+      and statid in ('rushing_att', 'passing_dropback')
+    group by statid, action_yards - yards_to_go > 0
+    order by 1, 2
+
+   Or suppose you want to know what affect a week 1 win has on your overall
+   record and chances of making the playoffs:
    
-   (Those actionids represent, respectively, rush, rush for TD, incompletion,
-   completion, completion for TD, interception, and sack. When the stat
-   hierarchy is done, that query will be a lot more friendly.)
+    with game_score as (
+      select gameid, team, sum(points) points
+      from quarter_score
+      group by gameid, team
+    ), team as (
+      select distinct team from quarter_score
+    ), victor as (
+      select season, week, g.gameid, case when hs.points > vs.points then hs.team else vs.team end as victor
+      from game g
+      join game_score hs on g.gameid = hs.gameid and g.home_team = hs.team
+      join game_score vs on g.gameid = vs.gameid and g.away_team = vs.team
+      where season != 2012 and week between 1 and 17
+    ), team_wins as (
+      select season, victor team, count(*) wins
+      from victor s
+      group by season, victor
+    ), x as (
+      select t.season, t.team, t.wins, w1.victor is not null w1_win,
+             max(pg.week) playoff
+      from team_wins t
+      left join victor w1 on t.season = w1.season
+        and t.team = w1.victor and w1.week = 1
+      left join game pg on t.season = pg.season and pg.week > 17
+        and t.team in (pg.home_team, pg.away_team)
+      group by t.season, t.team, t.wins, w1.victor
+    )
+    select w1_win, avg(wins), count(playoff)::float/count(*) playoff_chances
+    from x
+    group by w1_win   
