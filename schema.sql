@@ -116,7 +116,7 @@ CREATE TABLE play_action (
 
 CREATE TABLE player (
     playerid character(10) NOT NULL,
-    name character varying(100) NOT NULL
+    name character varying(100)
 );
 
 
